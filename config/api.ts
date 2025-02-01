@@ -12,9 +12,9 @@ export const API_CONFIG = {
 }
 
 export const OUR_BOATS = [
-  { id: "52110487", name: "Mitra" },
-  { id: "52110484", name: "Apollo" },
-  { id: "52110486", name: "Artemis" },
-  { id: "52071436", name: "Poseidon" },
-  { id: "52110483", name: "Zeus" },
+  { id: "52110487", name: "Athena 5" },
+  { id: "52110484", name: "Athena 2" },
+  { id: "52110486", name: "Athena 4" },
+  { id: "52071436", name: "Moana" },
+  { id: "52110483", name: "Moana 2" },
 ]

@@ -1,3 +1,4 @@
+// app/login/page.tsx
 "use client"
 
 import { useState } from "react"
@@ -5,7 +6,6 @@ import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useToast } from "@/components/ui/use-toast"
 import { API_CONFIG } from "@/config/api"
 import { setAuthToken } from "@/lib/utils"
 
@@ -19,6 +19,10 @@ async function loginUser(username: string, password: string) {
   })
 
   if (!response.ok) {
+    const errorData = await response.json()
+    if (response.status === 401) {
+      throw new Error("Username or password is not valid")
+    }
     throw new Error("Login failed")
   }
 
@@ -29,21 +33,18 @@ async function loginUser(username: string, password: string) {
 export default function LoginPage() {
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
+  const [errorMessage, setErrorMessage] = useState("")
   const router = useRouter()
-  const { toast } = useToast()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setErrorMessage("")
     try {
       const { access_token } = await loginUser(username, password)
       setAuthToken(access_token)
       router.push("/dashboard")
-    } catch (error) {
-      toast({
-        title: "Login Error",
-        description: "Invalid username or password",
-        variant: "destructive",
-      })
+    } catch (error: any) {
+      setErrorMessage(error.message || "Username or password is not valid")
     }
   }
 
@@ -59,7 +60,7 @@ export default function LoginPage() {
             <div className="space-y-2">
               <label
                 htmlFor="username"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className="text-sm font-medium leading-none"
               >
                 Username
               </label>
@@ -74,7 +75,7 @@ export default function LoginPage() {
             <div className="space-y-2">
               <label
                 htmlFor="password"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className="text-sm font-medium leading-none"
               >
                 Password
               </label>
@@ -89,10 +90,14 @@ export default function LoginPage() {
             <Button type="submit" className="w-full">
               Login
             </Button>
+            {errorMessage && (
+              <div className="mt-2 rounded bg-red-500 p-2 text-center text-sm text-white">
+                {errorMessage}
+              </div>
+            )}
           </form>
         </CardContent>
       </Card>
     </div>
   )
 }
-
