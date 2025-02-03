@@ -8,6 +8,7 @@ export const API_CONFIG = {
     BOT_STOP: "/api/v1/bot/stop",
     BOT_STATUS: "/api/v1/bot/status",
     PRICE_DATA: "/api/v1/price-data",
+    DAILY_STATUS: "/api/v1/bot/daily_status"
   },
 }
 

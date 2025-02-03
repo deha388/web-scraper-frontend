@@ -101,7 +101,15 @@ const initialBotState: BotState = {
   priceData: [],
 }
 
+interface BotDailyStatus {
+  bot_id: number
+  status: string
+  last_update_date: string
+  timestamp: string
+}
+
 function BotSection({ botName }: { botName: string }) {
+  // Var olan bot_status için state
   const [state, setState] = React.useState<BotState>(() => {
     if (typeof window !== "undefined") {
       const savedState = localStorage.getItem(`botState_${botName}`)
@@ -109,37 +117,15 @@ function BotSection({ botName }: { botName: string }) {
     }
     return initialBotState
   })
+  // Ek olarak daily status bilgisini tutmak için state
+  const [dailyStatus, setDailyStatus] = React.useState<BotDailyStatus | null>(null)
   const [competitors, setCompetitors] = React.useState<Competitor[]>([])
   const [competitorYachts, setCompetitorYachts] = React.useState<CompetitorYacht[]>([])
   const [isLoading, setIsLoading] = React.useState(false)
+  const [hasFetchedData, setHasFetchedData] = React.useState(false)
   const { toast } = useToast()
 
-  React.useEffect(() => {
-    fetchCompetitors()
-    fetchBotStatus()
-    const intervalId = setInterval(fetchBotStatus, 60000) // Check status every minute
-    return () => clearInterval(intervalId)
-  }, [])
-
-  React.useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(`botState_${botName}`, JSON.stringify(state))
-    }
-  }, [state, botName])
-
-  const fetchCompetitors = async () => {
-    try {
-      const data = await fetchWithAuth(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.COMPETITORS}`)
-      setCompetitors(data)
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to fetch competitors",
-        variant: "destructive",
-      })
-    }
-  }
-
+  // Mevcut bot_status bilgisini getiren fonksiyon (değiştirilmedi)
   const fetchBotStatus = async () => {
     try {
       const data = await fetchWithAuth(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.BOT_STATUS}`)
@@ -152,7 +138,59 @@ function BotSection({ botName }: { botName: string }) {
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to fetch bot status",
+        description: "Bot durumu alınamadı",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Yeni: bot_daily_status bilgisini getiren fonksiyon
+  const fetchBotDailyStatus = async () => {
+    try {
+      // Bot ID eşlemesi: örneğin Nausys için 1, MMK için 2 (gereksinimlerinize göre uyarlayın)
+      const botId = botName === "Nausys" ? 1 : botName === "MMK" ? 2 : 0
+      const data = await fetchWithAuth(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.DAILY_STATUS}?bot_id=${botId}`)
+      console.log(data)
+      setDailyStatus(data)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Günlük bot durumu alınamadı",
+        variant: "destructive",
+      })
+    }
+  }
+
+  React.useEffect(() => {
+    fetchCompetitors()
+    fetchBotStatus()
+    fetchBotDailyStatus()
+    // Her iki endpoint için de 60 saniyede bir güncelleme
+    const intervalId = setInterval(() => {
+      fetchBotStatus()
+    }, 60000)
+    return () => clearInterval(intervalId)
+  }, [])
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem(`botState_${botName}`, JSON.stringify(state))
+    }
+  }, [state, botName])
+  
+  React.useEffect(() => {
+    // Komponent ilk mount olduğunda seçimleri sıfırlayalım
+    resetSelections()
+  }, [])
+
+  const fetchCompetitors = async () => {
+    try {
+      const data = await fetchWithAuth(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.COMPETITORS}`)
+      setCompetitors(data)
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Rakip firmalar alınamadı",
         variant: "destructive",
       })
     }
@@ -163,49 +201,24 @@ function BotSection({ botName }: { botName: string }) {
       const data = await fetchWithAuth(
         `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.COMPETITOR_YACHTS}?competitor_name=${competitorName}`,
       )
-      // Parse the yachts array from the response
       const yachts = data.yachts || []
       setCompetitorYachts(yachts)
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to fetch competitor yachts",
+        description: "Rakip tekneler alınamadı",
         variant: "destructive",
       })
-      setCompetitorYachts([]) // Set to empty array on error
-    }
-  }
-
-  const toggleBot = async () => {
-    try {
-      const action = state.status === "running" ? "stop" : "start"
-      const data = await fetchWithAuth(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS[`BOT_${action.toUpperCase()}`]}`, {
-        method: "POST",
-      })
-      setState((prev) => ({
-        ...prev,
-        status: data.status,
-        lastRun: data.last_run,
-        nextRun: data.next_run,
-      }))
-      toast({
-        title: `Bot ${action === "start" ? "Started" : "Stopped"}`,
-        description: data.message,
-      })
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: `Failed to ${state.status === "running" ? "stop" : "start"} bot`,
-        variant: "destructive",
-      })
+      setCompetitorYachts([])
     }
   }
 
   const fetchPriceData = async () => {
+    setHasFetchedData(true)
     if (!state.date || !state.selectedCompetitor || !state.selectedCompetitorBoatId || !state.selectedOurBoat) {
       toast({
         title: "Error",
-        description: "Please select all required fields",
+        description: "Lütfen tüm gerekli alanları seçin",
         variant: "destructive",
       })
       return
@@ -220,7 +233,7 @@ function BotSection({ botName }: { botName: string }) {
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to fetch price data",
+        description: "Fiyat verileri alınamadı",
         variant: "destructive",
       })
     } finally {
@@ -242,17 +255,23 @@ function BotSection({ botName }: { botName: string }) {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-xl font-semibold">Bot Kontrolü</h2>
-          <div className="flex items-center mt-2">
-            <Badge variant={state.status === "running" ? "default" : "secondary"}>
-              {state.status === "running" ? "Çalışıyor" : "Durdu"}
-            </Badge>
-            {state.lastRun && (
-              <span className="text-sm text-muted-foreground ml-2">
-                Son çalışma: {format(new Date(state.lastRun), "dd.MM.yyyy HH:mm")}
-              </span>
-            )}
+          <div className="flex flex-col">
+            {/* Var olan bot_status bilgisi */}
+            <div className="flex items-center mt-2">
+              <Badge variant={state.status === "running" ? "default" : "secondary"}>
+                {state.status === "running" ? "Çalışıyor" : "Durdu"}
+              </Badge>
+              {state.lastRun && (
+                <span className="text-sm text-muted-foreground ml-2">
+                  Son çalışma: {format(new Date(state.lastRun), "dd.MM.yyyy HH:mm")}
+                </span>
+              )}
+            </div>
+            
           </div>
         </div>
+        {/* Botu başlat/durdur butonu (eldeki kodda yorumlanmış durumda, dokunulmadı) */}
+        {/*
         <Button variant={state.status === "running" ? "destructive" : "default"} onClick={toggleBot}>
           {state.status === "running" ? (
             <>
@@ -266,6 +285,18 @@ function BotSection({ botName }: { botName: string }) {
             </>
           )}
         </Button>
+        */}
+        {/* Yeni: bot_daily_status bilgisi */}
+        {dailyStatus && (
+              <div className="flex items-center mt-1">
+                
+                {dailyStatus.last_update_date && (
+                  <span className="text-sm text-muted-foreground ml-2">
+                    Son Güncelleme: {format(new Date(dailyStatus.last_update_date), "dd.MM.yyyy HH:mm")}
+                  </span>
+                )}
+              </div>
+            )}
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
@@ -360,58 +391,94 @@ function BotSection({ botName }: { botName: string }) {
           Sıfırla
         </Button>
       </div>
-
-      <Card className="mt-6 overflow-hidden">
-        <CardHeader>
-          <CardTitle>Fiyat Karşılaştırması</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tarih</TableHead>
-                  <TableHead>Bizim Konum</TableHead>
-                  <TableHead>Rakip Konum</TableHead>
-                  <TableHead className="text-right">Bizim Fiyat</TableHead>
-                  <TableHead className="text-right">Rakip Fiyat</TableHead>
-                  <TableHead className="text-right">Rakip Liste Fiyatı</TableHead>
-                  <TableHead>İndirim Tipi</TableHead>
-                  <TableHead>İndirim Yüzdesi</TableHead>
-                  <TableHead>Komisyon Yüzdesi</TableHead>
-                  <TableHead className="text-right">Komisyon</TableHead>
-                  <TableHead className="text-right">Fark</TableHead>
-                  <TableHead className="text-center">Durum</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {state.priceData.map((item, i) => (
-                  <TableRow key={i}>
-                    <TableCell>{item.tarih}</TableCell>
-                    <TableCell>{item.bizim_konum}</TableCell>
-                    <TableCell>{item.rakip_konum}</TableCell>
-                    <TableCell className="text-right">{item.bizim_fiyat}</TableCell>
-                    <TableCell className="text-right">{item.rakip_fiyat}</TableCell>
-                    <TableCell className="text-right">{item.rakip_list_price}</TableCell>
-                    <TableCell>{item.discount_type}</TableCell>
-                    <TableCell>{item.discount_percentage}</TableCell>
-                    <TableCell>{item.commission_percentage}</TableCell>
-                    <TableCell className="text-right">{item.commission}</TableCell>
-                    <TableCell className="text-right">{item.fark}</TableCell>
-                    <TableCell className="text-center">
-                      <span
-                        className={`inline-flex h-2 w-2 rounded-full ${
-                          item.durum === 0 ? "bg-green-500" : item.durum === 1 ? "bg-red-500" : "bg-yellow-500"
-                        }`}
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
+      {!hasFetchedData ? null : (
+        (() => {
+          if (state.priceData.length === 0) {
+            return (
+              <Card className="mt-6">
+                <CardContent>
+                  <div className="p-4 text-center text-destructive">
+                    Seçilen tarihte bot verisi bulunamadı
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          }
+          const allZero = state.priceData.every(item => item.rakip_list_price === 0)
+          if (allZero) {
+            return (
+              <Card className="mt-6">
+                <CardContent>
+                  <div className="p-4 text-center text-destructive">
+                    Karşılaştırılacak veri bulunamadı
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          }
+          const competitorBoatLabel =
+            competitorYachts.find((y) => y.id === state.selectedCompetitorBoatId)?.name || "Rakip Tekne"
+          const ourBoatLabel =
+            OUR_BOATS.find((b) => b.id === state.selectedOurBoat)?.name || "Bizim Tekne"
+          return (
+            <Card className="mt-6 overflow-hidden">
+              <CardHeader>
+                <CardTitle>{competitorBoatLabel} - {ourBoatLabel} Fiyat Karşılaştırması</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tarih</TableHead>
+                        <TableHead>Bizim Konum</TableHead>
+                        <TableHead>Rakip Konum</TableHead>
+                        <TableHead className="text-right">Bizim Fiyat</TableHead>
+                        <TableHead className="text-right">Rakip Fiyat</TableHead>
+                        <TableHead className="text-right">Rakip Liste Fiyatı</TableHead>
+                        <TableHead>İndirim Tipi</TableHead>
+                        <TableHead>İndirim Yüzdesi</TableHead>
+                        <TableHead>Komisyon Yüzdesi</TableHead>
+                        <TableHead className="text-right">Komisyon</TableHead>
+                        <TableHead className="text-right">Fark</TableHead>
+                        <TableHead className="text-center">Durum</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {state.priceData.map((item, i) => (
+                        <TableRow key={i}>
+                          <TableCell>{item.tarih}</TableCell>
+                          <TableCell>{item.bizim_konum}</TableCell>
+                          <TableCell>{item.rakip_konum}</TableCell>
+                          <TableCell className="text-right">{item.bizim_fiyat}</TableCell>
+                          <TableCell className="text-right">{item.rakip_fiyat}</TableCell>
+                          <TableCell className="text-right">{item.rakip_list_price}</TableCell>
+                          <TableCell>{item.discount_type}</TableCell>
+                          <TableCell>{item.discount_percentage}</TableCell>
+                          <TableCell>{item.commission_percentage}</TableCell>
+                          <TableCell className="text-right">{item.commission}</TableCell>
+                          <TableCell className="text-right">{item.fark}</TableCell>
+                          <TableCell className="text-center">
+                            <span
+                              className={`inline-flex h-2 w-2 rounded-full ${
+                                item.durum === 0
+                                  ? "bg-green-500"
+                                  : item.durum === 1
+                                  ? "bg-red-500"
+                                  : "bg-yellow-500"
+                              }`}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })()
+      )}
     </div>
   )
 }
@@ -472,4 +539,3 @@ export default function DashboardPage() {
     </div>
   )
 }
-
